@@ -18,6 +18,11 @@ var queryFeed = groupId + "/feed?fields=" + config.facebook.fields_feed + "&sinc
 
 var confPostgres = "postgres://" + config.postgres.user + ":" + config.postgres.pswd + "@localhost/" + config.postgres.db;
 
+function exitWithError(msg) {
+  console.log(msg);
+  process.exit(1);
+}
+
 function processPosts(posts,res,callback) {
 
     async.each(posts, function(post, next) {
@@ -26,40 +31,97 @@ function processPosts(posts,res,callback) {
         var created_time = post.created_time;
         var updated_time = post.updated_time;
         var from = post.from;
-        var to_array = post.to.data;
-        var to_id_array = _.map(to_array, function(to){ return to.id; });
-        var message = post.message;
+
+        var to = null;
+        var to_id = null;
+        
+        if (post.to != null) {
+            to = post.to.data;
+            to_id = _.map(to, function(to){ return to.id; });            
+        }
+        
+        var message = null;
+        
+        if (post.message != null) {
+            message = post.message.replace(/'/g, "''");
+        } 
+        
         var link_url = post.link;
         var link_name = post.name;
+
+        var link_name = null;
+        
+        if (post.name != null) {
+            link_name = post.name.replace(/'/g, "''");
+        } 
+
         var link_picture = post.picture;
-        var link_caption=post.caption;
+        var link_caption = post.caption;
 
-        console.log(from);
-        console.log(to_id_array);
+        var link_description = null;
+        
+        if (post.description != null) {
+            link_description = post.description.replace(/'/g, "''");
+        } 
+        
+        var source_url = post.source;
+        var type = post.type;
 
-        // var client = new pg.Client(confPostgres);
+        var likes = null;
+        var likes_id = null;
 
-        // client.connect(function(err) {
+        if (post.likes != null) {
+            likes = post.likes.data;
+            likes_id = _.map(likes, function(like){ return like.id; });
+        }
 
-        //     if (err)
-        //         next(err);
+        var comments = null;
+        var comments_id = null;
 
-        //     client.query("INSERT INTO TABLE fb_post (" 
-                
-        //         + post.id + "," +
-        //         + created_time + "," +
-        //         + post.id + "," +
+        if (post.comments != null) {
+            comments = post.comments.data;
+            comments_id = _.map(comments, function(comment){ return comment.id; });
+        }
 
-        //         ")", function(err, result) {
+        var client = new pg.Client(confPostgres);
 
-        //         if (err)
-        //             next(err);
+        var query = "INSERT INTO fb_post (id,created_time,updated_time,from_id,to_id,message,link_url,link_name,link_picture,link_caption,link_description,source_url,type,likes,comments)"
+                + " SELECT '" +
+                id + "','" +
+                created_time + "','" +
+                updated_time + "','" +
+                from.id + "'," +
+                "ARRAY[" + to_id + "],'" +
+                message + "','" +
+                link_url + "','" +
+                link_name + "','" +
+                link_picture + "','" +
+                link_caption + "','" +
+                link_description + "','" +
+                source_url + "','" +
+                type + "'," + 
+                "ARRAY[" + likes_id + "]," +
+                "ARRAY[" + comments_id + "]" +
+                " WHERE NOT EXISTS ( SELECT id FROM fb_post WHERE id = '" + id + "')";
 
-        //         client.end();
-        //     });
-        // });
+        client.connect(function(err) {
 
-      next();
+            if (err)
+                next(err);
+
+            client.query(query, function(err, result) {
+
+                if (err) {
+                    console.log(query)
+                    next(err);
+                }
+
+
+                client.end();
+
+                next();
+            });
+        });
 
     }, function(err){
         
