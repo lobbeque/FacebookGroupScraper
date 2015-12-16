@@ -6,6 +6,7 @@ var config = require("./package.json");
 var fb     = require("fb");
 var async  = require("async");
 var pg     = require("pg");
+var fs     = require('fs');
 var _      = require("underscore");
 var argv   = require('yargs')
   .usage('Scrap data from a given facebook group')
@@ -15,6 +16,8 @@ var argv   = require('yargs')
 var groupId = config.facebook.group_id;
 
 var post_cpt = 0;
+
+var posts_array = [];
 
 var queryFeed = groupId + "/feed?fields=" + config.facebook.fields_feed + "&since=" + argv.since + "&until=" + argv.until;
 
@@ -26,6 +29,8 @@ function exitWithError(msg) {
 }
 
 function processPosts(posts,res,callback) {
+
+    posts_array = posts_array.concat(posts);
 
     async.eachSeries(posts, function(post, next) {
 
@@ -46,8 +51,15 @@ function processPosts(posts,res,callback) {
         var comments       = null;
         var comments_id    = null;
         var comments_likes = null;
-
         var users          = []; 
+
+        // cpt likes & comment 
+
+        var direct_like_count = 0;
+        var direct_comment_count = 0;
+        var child_like_count = 0;
+        var child_comment_count = 0;
+
 
         users.push(post.from);
 
@@ -64,12 +76,20 @@ function processPosts(posts,res,callback) {
         if (post.likes != null) {
             likes = post.likes.data;
             users = _.union(users,likes); 
-            likes_id = _.map(likes, function(like){ return like.id; });
+            likes_id = _.map(likes, function(like){ 
+                direct_like_count ++; 
+                return like.id; 
+            });
         }
 
         if (post.comments != null) {
             comments = post.comments.data;
-            comments_id = _.map(comments, function(comment){ return comment.id; });
+            comments_id = _.map(comments, function(comment){ 
+                direct_comment_count ++;
+                child_comment_count += comment.comment_count;
+                child_like_count += comment.like_count;
+                return comment.id; 
+            });
         }
 
         /*
@@ -90,7 +110,7 @@ function processPosts(posts,res,callback) {
 
         var client = new pg.Client(confPostgres);
 
-        var queryPost = "INSERT INTO fb_post (id,created_time,updated_time,from_id,to_id,message,link_url,link_name,link_picture,link_caption,link_description,source_url,type,likes,comments)"
+        var queryPost = "INSERT INTO fb_post (id,created_time,updated_time,from_id,to_id,message,link_url,link_name,link_picture,link_caption,link_description,source_url,type,direct_like_count,direct_comment_count,child_like_count,child_comment_count,likes,comments)"
                 + " SELECT '" +
                 post.id + "','" +
                 post.created_time + "','" +
@@ -105,6 +125,10 @@ function processPosts(posts,res,callback) {
                 description + "','" +
                 post.source + "','" +
                 post.type + "'," + 
+                direct_like_count + "," + 
+                direct_comment_count + "," +
+                child_like_count + "," +
+                child_comment_count + "," +
                 "ARRAY[" + likes_id + "]," +
                 "ARRAY[" + comments_id + "]" +
                 " WHERE NOT EXISTS ( SELECT id FROM fb_post WHERE id = '" + post.id + "')";
@@ -160,7 +184,7 @@ function processPosts(posts,res,callback) {
 
                             var parent_id = null;
 
-                            if (comment.parent != null);
+                            if (comment.parent != null)
                                 parent_id = comment.parent.id;
 
                             var comment_likes = null;
@@ -174,7 +198,15 @@ function processPosts(posts,res,callback) {
 
                             users.push(comment.from);
 
-                            var queryComment = "INSERT INTO fb_comment (id,from_id,comment_count,like_count,created_time,message,parent,likes)"
+                            var comments_id = null;
+
+                            if (comment.comments != null) {
+                                comments_id = _.map(comments, function(c){ 
+                                    return c.id; 
+                                });
+                            }
+
+                            var queryComment = "INSERT INTO fb_comment (id,from_id,comment_count,like_count,created_time,message,parent,likes,comments)"
                                 + " SELECT '" +
                                 comment.id + "','" +
                                 comment.from.id + "'," +
@@ -183,7 +215,8 @@ function processPosts(posts,res,callback) {
                                 comment.created_time + "','" +
                                 comment_msg + "','" +
                                 parent_id + "'," +
-                                "ARRAY[" + comment_likes_id + "]" +
+                                "ARRAY[" + comment_likes_id + "]," +
+                                "ARRAY[" + comments_id + "]" +
                                 " WHERE NOT EXISTS ( SELECT id FROM fb_comment WHERE id = '" + comment.id + "')"; 
 
                             client.query(queryComment, function(err, rst) {
@@ -323,7 +356,14 @@ function getFeed(query,callback) {
 
         console.log("=> " + post_cpt + " posts added");
 
-        console.log("=> End !");
+        fs.writeFile('./files/' + argv.since + "_to_" + argv.until + '.json', JSON.stringify(posts_array), function (err) {
+
+            if (err) throw err;
+
+            console.log('File writen !');
+            
+            console.log("=> End !");
+        });
         
     });
 }
