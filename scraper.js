@@ -2,15 +2,17 @@
  * Scrap data from a given facebook group 
  */
 
-var config = require("./package.json");
-var fb     = require("fb");
-var async  = require("async");
-var pg     = require("pg");
-var fs     = require('fs');
-var _      = require("underscore");
-var argv   = require('yargs')
+var config   = require("./package.json");
+var fb       = require("fb");
+var async    = require("async");
+var pg       = require("pg");
+var fs       = require('fs');
+var _        = require("underscore");
+var schedule = require('node-schedule');
+var argv     = require('yargs')
   .usage('Scrap data from a given facebook group')
   .demand(['since','until'])
+  .default('mode','one-shot')
   .argv;
 
 var groupId = config.facebook.group_id;
@@ -368,23 +370,55 @@ function getFeed(query,callback) {
     });
 }
 
-fb.api('oauth/access_token', {
 
-    client_id: config.facebook.app_id,
-    client_secret: config.facebook.app_secret,
-    grant_type: 'client_credentials'
 
-}, function (res) {
+function process() {
+
+    fb.api('oauth/access_token', {
+
+        client_id: config.facebook.app_id,
+        client_secret: config.facebook.app_secret,
+        grant_type: 'client_credentials'
+
+    }, function (res) {
+        
+        if(!res || res.error) {
+            console.log(!res ? 'error occurred' : res.error);
+            return;
+        }
+        
+        var accessToken = res.access_token;
+
+        fb.setAccessToken(accessToken);
+
+        getFeed(queryFeed,null);
+    });
+}
+
+if ( argv.mode == "sched" ) {
+
+    // every day at 5h00
+
+    var today = new Date();
+    var until = new Date();
+    var since = new Date();
+
+    var until = new Date(until.setDate(until.getDate() - config.time.from_today));
+    var since = new Date(since.setDate(since.getDate() - config.time.time_range - config.time.from_today));   
+
+    until = until.toISOString().split('T')[0];
+    since = since.toISOString().split('T')[0];
+
+    schedule.scheduleJob('0 5 * * *', function(){
+        argv.since = since;
+        argv.until = until;
+        process();
+    });
+
+} else {
     
-    if(!res || res.error) {
-        console.log(!res ? 'error occurred' : res.error);
-        return;
-    }
-    
-    var accessToken = res.access_token;
+    process();
 
-    fb.setAccessToken(accessToken);
+}
 
-    getFeed(queryFeed,null);
-});
 
