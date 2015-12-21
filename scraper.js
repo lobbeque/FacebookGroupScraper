@@ -399,19 +399,23 @@ if ( argv.mode == "sched" ) {
 
     // every day at 5h00
 
-    var today = new Date();
-    var until = new Date();
-    var since = new Date();
 
-    var until = new Date(until.setDate(until.getDate() - config.time.from_today));
-    var since = new Date(since.setDate(since.getDate() - config.time.time_range - config.time.from_today));   
-
-    until = until.toISOString().split('T')[0];
-    since = since.toISOString().split('T')[0];
 
     schedule.scheduleJob('0 5 * * *', function(){
+
+        var today = new Date();
+        var until = new Date();
+        var since = new Date();
+
+        var until = new Date(until.setDate(until.getDate() - config.time.from_today));
+        var since = new Date(since.setDate(since.getDate() - config.time.time_range - config.time.from_today));   
+
+        until = until.toISOString().split('T')[0];
+        since = since.toISOString().split('T')[0];
+
         argv.since = since;
         argv.until = until;
+
         process();
     });
 
